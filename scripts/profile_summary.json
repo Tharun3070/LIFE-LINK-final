@@ -1,0 +1,135 @@
+{
+  "shape": [
+    30000,
+    28
+  ],
+  "target_eligible_counts": {
+    "Yes": 23107,
+    "No": 6893
+  },
+  "target_eligible_pct": {
+    "Yes": 77.02333333333333,
+    "No": 22.976666666666667
+  },
+  "target_avail_counts": {
+    "Available": 20518,
+    "Unavailable": 6893,
+    "On-call": 2589
+  },
+  "target_avail_pct": {
+    "Available": 68.39333333333333,
+    "Unavailable": 22.976666666666667,
+    "On-call": 8.63
+  },
+  "crosstab_elig_avail": {
+    "Available": {
+      "No": 0,
+      "Yes": 20518
+    },
+    "On-call": {
+      "No": 0,
+      "Yes": 2589
+    },
+    "Unavailable": {
+      "No": 6893,
+      "Yes": 0
+    }
+  },
+  "ineligible_reasons_top10": {
+    "Hemoglobin below prototype threshold": 2812,
+    "Recent/current infection": 857,
+    "Fever": 596,
+    "Medication requires review": 575,
+    "Recent blood donation": 485,
+    "Recent surgery": 403,
+    "Medical condition requires review": 354,
+    "Recent tattoo": 169,
+    "Hemoglobin below prototype threshold; Recent/current infection": 91,
+    "Hemoglobin below prototype threshold; Fever": 75
+  },
+  "eligible_reasons_top5": {
+    "Eligible for prototype matching": 23107
+  },
+  "num_stats": {
+    "Age": {
+      "min": 18.0,
+      "max": 65.0,
+      "mean": 32.829,
+      "median": 33.0,
+      "std": 9.346197304080498
+    },
+    "Total_Donations": {
+      "min": 0.0,
+      "max": 12.0,
+      "mean": 1.1044,
+      "median": 1.0,
+      "std": 1.4666648140784913
+    },
+    "Weight_kg": {
+      "min": 45.0,
+      "max": 110.0,
+      "mean": 65.58437333333333,
+      "median": 65.6,
+      "std": 10.590848943466886
+    },
+    "Hemoglobin_g_dL": {
+      "min": 10.0,
+      "max": 17.8,
+      "mean": 13.891606666666664,
+      "median": 13.9,
+      "std": 1.1537555736317573
+    }
+  },
+  "blood_groups": {
+    "O+": 11236,
+    "B+": 9947,
+    "A+": 6415,
+    "AB+": 1215,
+    "O-": 439,
+    "B-": 377,
+    "A-": 250,
+    "AB-": 121
+  },
+  "flag_crosstabs": {
+    "Fever": {
+      "No": {
+        "No": 6115,
+        "Yes": 23107
+      },
+      "Yes": {
+        "No": 778,
+        "Yes": 0
+      }
+    },
+    "Infection": {
+      "No": {
+        "No": 5838,
+        "Yes": 23107
+      },
+      "Yes": {
+        "No": 1055,
+        "Yes": 0
+      }
+    },
+    "Recent_Surgery": {
+      "No": {
+        "No": 6386,
+        "Yes": 23107
+      },
+      "Yes": {
+        "No": 507,
+        "Yes": 0
+      }
+    },
+    "Recently_Donated": {
+      "No": {
+        "No": 6287,
+        "Yes": 23107
+      },
+      "Yes": {
+        "No": 606,
+        "Yes": 0
+      }
+    }
+  }
+}
