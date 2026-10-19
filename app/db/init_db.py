@@ -21,12 +21,26 @@ def init_db(db: Session) -> None:
     In development mode or when AUTO_SEED_DATA is enabled, ensures tables exist and
     seeds initial demo records in strict relational dependency order.
     """
-    # 1. Ensure tables exist in development / SQLite environment
-    if settings.APP_ENV == "development" or settings.DATABASE_URL.startswith("sqlite"):
+    app_env = (settings.APP_ENV or "development").strip().lower()
+
+    # 1. Ensure tables exist in development / SQLite environment (never in staging/production)
+    if app_env not in ("staging", "production") and (
+        app_env == "development" or settings.DATABASE_URL.startswith("sqlite")
+    ):
         Base.metadata.create_all(bind=db.get_bind())
 
-    if not settings.AUTO_SEED_DATA and settings.APP_ENV == "production":
-        logger.info("Production mode detected: skipping automatic demo data seeding.")
+    # 2. Hard Seeding Guard: Demo-account seeding is strictly prohibited in staging and production
+    # under all circumstances, even if AUTO_SEED_DATA is True.
+    if app_env in ("staging", "production"):
+        logger.info(
+            f"Demo seeding guard active: Seeding is strictly blocked in '{settings.APP_ENV}' environment. "
+            "Database schema and records must be managed independently."
+        )
+        return
+
+    # 3. Development / Demo environment toggle
+    if not settings.AUTO_SEED_DATA:
+        logger.info("AUTO_SEED_DATA is False: skipping automatic demo data seeding.")
         return
 
     # 1. Hospitals (Independent Root)

@@ -1,7 +1,7 @@
 import os
 import json
 from typing import List, Union
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "LifeLink Emergency Intelligence Network"
     VERSION: str = "2.0.0"
+
+    @field_validator("APP_ENV", mode="before")
+    @classmethod
+    def normalize_app_env(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return "development"
 
     # Server
     HOST: str = "0.0.0.0"
@@ -72,6 +79,69 @@ class Settings(BaseSettings):
                 norm_path = canonical_db_path.replace("\\", "/")
                 return f"sqlite:///{norm_path}"
         return v
+
+    @model_validator(mode="after")
+    def validate_environment_security(self) -> "Settings":
+        """
+        Fail-fast validation for staging and production environments:
+        1. Refuses boot with known insecure development JWT fallback or placeholder secrets.
+        2. Prohibits silent fallback to SQLite and mandates an explicit PostgreSQL database URL.
+        3. Leaves local development and test environments fully functional with default development settings.
+        """
+        env = (self.APP_ENV or "development").strip().lower()
+        if env in ("staging", "production"):
+            # 1. JWT Secret Validation
+            known_insecure_secrets = {
+                "dev_insecure_jwt_secret_key_change_in_production_lifelink_2026",
+                "change_this_secret_in_production_lifelink_jwt_key",
+                "your_secret_key",
+                "changeme",
+                "secret",
+                "placeholder",
+            }
+            jwt_secret = self.JWT_SECRET_KEY.strip() if self.JWT_SECRET_KEY else ""
+            if not jwt_secret or jwt_secret.lower() in known_insecure_secrets:
+                raise ValueError(
+                    f"Invalid JWT_SECRET_KEY: APP_ENV='{self.APP_ENV}' requires an explicitly configured, secure JWT secret key. "
+                    "The development fallback or placeholder secret is strictly prohibited in staging and production."
+                )
+
+            if len(jwt_secret) < 32:
+                raise ValueError(
+                    f"Invalid JWT_SECRET_KEY: APP_ENV='{self.APP_ENV}' requires a secure JWT secret key of at least 32 characters for HS256."
+                )
+
+            # 2. Database URL Validation (Must be PostgreSQL, never SQLite or unconfigured)
+            db_url = self.DATABASE_URL.strip() if self.DATABASE_URL else ""
+            if not db_url or db_url.startswith("sqlite"):
+                raise ValueError(
+                    f"Invalid DATABASE_URL: APP_ENV='{self.APP_ENV}' requires an explicitly configured PostgreSQL database URL. "
+                    "Silent fallback to SQLite or an unconfigured database target is strictly prohibited."
+                )
+
+            if not (db_url.startswith("postgresql+psycopg://") or db_url.startswith("postgresql://")):
+                raise ValueError(
+                    f"Invalid DATABASE_URL: APP_ENV='{self.APP_ENV}' requires a PostgreSQL dialect URL "
+                    "(e.g., postgresql+psycopg://<user>:<password>@<host>:<port>/<dbname>)."
+                )
+
+            # 3. Malformed PostgreSQL URL Validation
+            try:
+                from sqlalchemy.engine import make_url
+                parsed = make_url(db_url)
+            except Exception:
+                raise ValueError(
+                    f"Invalid DATABASE_URL: APP_ENV='{self.APP_ENV}' requires a well-formed PostgreSQL URL "
+                    "(e.g., postgresql+psycopg://<user>:<password>@<host>:<port>/<dbname>)."
+                )
+
+            if not parsed.database or not parsed.database.strip():
+                raise ValueError(
+                    f"Invalid DATABASE_URL: APP_ENV='{self.APP_ENV}' requires a well-formed PostgreSQL URL "
+                    "containing a valid target database name (e.g., postgresql+psycopg://<user>:<password>@<host>:<port>/<dbname>)."
+                )
+
+        return self
 
     # Testing & Demo Safety Guards
     DEMO_WRITE_GUARD_ENABLED: bool = False
