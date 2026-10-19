@@ -1,0 +1,90 @@
+# ==============================================================================
+# LifeLink Healthcare Intelligence Platform — Render Blueprint Specification
+# Environment: Staging
+# Service Type: Native Python Web Service + Managed PostgreSQL Database
+# Documentation: https://render.com/docs/blueprint-spec
+# ==============================================================================
+
+databases:
+  - name: lifelink-staging-db
+    databaseName: lifelink_staging
+    user: lifelink_user
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: lifelink-backend-staging
+    runtime: python
+    plan: free
+    region: oregon
+
+    # Repository layout:
+    # Set to '.' when this backend repository is connected directly to Render.
+    # If deploying from a monorepo containing a 'backend' directory, change to 'backend'.
+    rootDir: .
+
+    # Build and startup commands
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+
+    # Health check probe for traffic routing
+    healthCheckPath: /health
+
+    # Runtime Environment Variables
+    envVars:
+      # Core Environment Configuration
+      - key: APP_ENV
+        value: staging
+      - key: DEBUG
+        value: "false"
+
+      # Managed Database Connection
+      # Render dynamically wires the connection string from the managed database defined above.
+      # If using an external managed PostgreSQL instance instead, comment out fromDatabase and set sync: false.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lifelink-staging-db
+          property: connectionString
+
+      # Authentication & Security
+      # Render automatically generates a cryptographically secure random string (>= 32 chars).
+      # If providing a custom secret, ensure it is at least 32 characters to satisfy HS256 policy.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "120"
+      - key: JWT_REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+
+      # Cross-Origin Resource Sharing (CORS)
+      # BLOCKER / REQUIRED: Must be set in the Render Dashboard before serving traffic.
+      # Set this to the deployed staging frontend origin (e.g. "https://lifelink-staging.onrender.com"
+      # or a JSON array of origins).
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Safety & Telephony Guards (Enforced Staging Safe Defaults)
+      # Live external dispatch (Twilio SMS/WhatsApp) is strictly disabled.
+      - key: NOTIFICATION_PROVIDER
+        value: mock
+      - key: MOCK_NOTIFICATIONS_ONLY
+        value: "true"
+      - key: TWILIO_LIVE_ENABLED
+        value: "false"
+      - key: NOTIFICATION_RATE_LIMIT_PER_RECIPIENT_PER_HOUR
+        value: "5"
+      - key: NOTIFICATION_SPEND_CEILING_USD
+        value: "100.0"
+
+      # Database Safety & Seeding Guards
+      # Table creation and demo seeding are bypassed on staging startup; schema is handled via Alembic.
+      - key: AUTO_SEED_DATA
+        value: "false"
+      - key: DEMO_WRITE_GUARD_ENABLED
+        value: "false"
+      - key: POSTGIS_ENABLED
+        value: "false"
