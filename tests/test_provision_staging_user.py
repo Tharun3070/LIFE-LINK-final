@@ -22,12 +22,21 @@ from scripts.provision_staging_user import (
 
 @pytest.fixture
 def mock_isolated_db(monkeypatch):
-    """Creates an isolated in-memory SQLite database sharing the same engine connection via StaticPool."""
+    """Creates an isolated in-memory SQLite database sharing the same engine connection via StaticPool with foreign keys enforced."""
     test_engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    from sqlalchemy import event
+
+    @event.listens_for(test_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(test_engine)
     TestingSession = sessionmaker(bind=test_engine)
 
@@ -334,6 +343,82 @@ def test_rollback_on_database_error(mock_isolated_db, monkeypatch):
     # Verify no records committed in the DB
     db = real_session_maker()
     assert db.query(User).filter(User.id == "usr-rollback-01").first() is None
+    assert db.query(Consent).count() == 0
+    assert db.query(AuditLog).count() == 0
+    db.close()
+
+
+def test_provisioning_foreign_key_ordering_with_sqlite_enforcement(mock_isolated_db, monkeypatch):
+    """
+    Regression test: Verifies that User is flushed to the database prior to
+    Consent insertion under strict SQLite PRAGMA foreign_keys=ON enforcement,
+    preventing Foreign Key violation on consents_user_id_fkey.
+    """
+    monkeypatch.setenv("STAGING_USER_PASSWORD", "SecureStagingPassword2026!")
+
+    args = MagicMock()
+    args.confirm = True
+    args.email = "fk.ordering@lifelink.internal"
+    args.name = "FK Ordering Test"
+    args.role = "doctor"
+    args.role_title = "Doctor"
+    args.user_id = "usr-fk-ordering-01"
+    args.hospital_id = None
+    args.password_env = "STAGING_USER_PASSWORD"
+    args.expected_db_name = None
+    args.expected_db_host = None
+
+    result = provision_staging_user(args)
+    assert result["status"] == "created"
+    assert result["created"] is True
+
+    db = mock_isolated_db()
+    # Confirm exactly 1 User, 1 Consent, 1 AuditLog created
+    user = db.query(User).filter(User.id == "usr-fk-ordering-01").first()
+    assert user is not None
+    consent = db.query(Consent).filter(Consent.user_id == "usr-fk-ordering-01").first()
+    assert consent is not None
+    assert consent.live_location is False
+    assert consent.emergency_communication is False
+    assert consent.donation_requests is False
+    assert consent.health_data_sharing is False
+    audit = db.query(AuditLog).filter(AuditLog.resource_id == "usr-fk-ordering-01").first()
+    assert audit is not None
+    db.close()
+
+
+def test_rollback_on_flush_failure_leaves_no_records(mock_isolated_db, monkeypatch):
+    """Verifies that an error during flush triggers rollback and leaves zero records in database."""
+    monkeypatch.setenv("STAGING_USER_PASSWORD", "SecureStagingPassword2026!")
+
+    args = MagicMock()
+    args.confirm = True
+    args.email = "flush.fail@lifelink.internal"
+    args.name = "Flush Fail User"
+    args.role = "doctor"
+    args.role_title = "Doctor"
+    args.user_id = "usr-flush-fail-01"
+    args.hospital_id = None
+    args.password_env = "STAGING_USER_PASSWORD"
+    args.expected_db_name = None
+    args.expected_db_host = None
+
+    real_session_maker = mock_isolated_db
+
+    def failing_flush_session(*s_args, **s_kwargs):
+        session = real_session_maker(*s_args, **s_kwargs)
+        monkeypatch.setattr(session, "flush", MagicMock(side_effect=RuntimeError("Simulated flush failure")))
+        return session
+
+    monkeypatch.setattr("scripts.provision_staging_user.SessionLocal", failing_flush_session)
+
+    with pytest.raises(RuntimeError, match="Simulated flush failure"):
+        provision_staging_user(args)
+
+    db = real_session_maker()
+    assert db.query(User).filter(User.id == "usr-flush-fail-01").first() is None
+    assert db.query(Consent).count() == 0
+    assert db.query(AuditLog).count() == 0
     db.close()
 
 

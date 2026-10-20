@@ -418,6 +418,7 @@ def provision_staging_user(args) -> dict:
 
         # Step 12: Atomic Transaction Commit
         db.add(new_user)
+        db.flush()
         db.add(new_consent)
         db.add(audit_record)
         db.commit()
