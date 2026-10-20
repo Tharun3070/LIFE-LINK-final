@@ -12,25 +12,24 @@ from app.models.audit import AuditLog
 
 
 class AuthService:
+    # Pre-computed bcrypt hash for constant-time comparison on unknown user
+    DUMMY_BCRYPT_HASH = "$2b$12$JIdh7oxO.jauf2ckaIVl6e3g2ZNWoUbkI7DBUj7JW2ilkCqc.5V2i"
+
     @staticmethod
     def login(db: Session, credentials: LoginCredentials, ip_address: Optional[str] = None) -> AuthSessionResponse:
-        identifier = credentials.identifier.strip().lower()
-        
-        # 1. Look up user by email or id
+        identifier = credentials.identifier.strip()
+
+        # 1. Look up user strictly by exact email (case-insensitive) or exact user ID
         user = db.query(User).filter(
             (User.email.ilike(identifier)) | (User.id == identifier)
         ).first()
 
-        # 2. Check if identifier corresponds to role name for demo switching (e.g. "doctor", "donor", "admin")
+        # 2. Timing attack & account enumeration mitigation: verify against dummy hash if user not found
         if not user:
-            role_match = db.query(User).filter(User.role.ilike(f"%{identifier}%")).first()
-            if role_match:
-                user = role_match
-
-        if not user:
+            verify_password(credentials.password, AuthService.DUMMY_BCRYPT_HASH)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found with provided identifier",
+                detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -38,7 +37,7 @@ class AuthService:
         if not verify_password(credentials.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password",
+                detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -109,7 +108,15 @@ class AuthService:
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
+                detail="Invalid or expired refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if user.session_status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session is inactive or logged out",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         new_access_token = create_access_token(subject=user.id, role=user.role)
