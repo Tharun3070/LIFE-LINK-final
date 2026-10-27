@@ -53,7 +53,7 @@ def test_get_ambulance_eta(client):
 
 def test_update_ambulance_location_emits_telemetry(client, ambulance_token, db):
     """Verifies that updating ambulance location persists to DB and broadcasts ambulance.location_updated."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={ambulance_token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
 
@@ -88,7 +88,7 @@ def test_update_ambulance_location_emits_telemetry(client, ambulance_token, db):
 
 def test_update_ambulance_status_emits_telemetry_and_audits(client, doctor_token, db):
     """Verifies that updating ambulance status persists to DB, logs collision-resistant audit, and broadcasts ambulance.status_updated."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
 

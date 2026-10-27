@@ -231,15 +231,17 @@ def test_blood_endpoint_cross_donor_tampering_blocked(client, donor_token):
     assert "own profile" in (res_tamper.json().get("message") or res_tamper.json().get("detail", ""))
 
 
-def test_blood_endpoint_repeated_submission_rejected(client, db):
+def test_blood_endpoint_repeated_submission_rejected(client, donor_token, db):
     # Ensure D-101 is reset to contacted
     donor = db.query(Donor).filter(Donor.id == "D-101").first()
     donor.status = "contacted"
     db.commit()
 
+    headers = {"Authorization": f"Bearer {donor_token}"}
     # First response succeeds
     res1 = client.post(
         "/api/v1/blood/donors/D-101/response",
+        headers=headers,
         json={"status": "accepted", "shareLocation": True},
     )
     assert res1.status_code == 200
@@ -247,6 +249,7 @@ def test_blood_endpoint_repeated_submission_rejected(client, db):
     # Repeated submission with same status returns 400
     res2 = client.post(
         "/api/v1/blood/donors/D-101/response",
+        headers=headers,
         json={"status": "accepted", "shareLocation": True},
     )
     assert res2.status_code == 400

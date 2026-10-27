@@ -28,6 +28,18 @@ def list_audit_logs(
 
 
 @router.get(
+    "/verify",
+    summary="Verify Audit Trail Cryptographic Integrity",
+    description="Traverses the cryptographic hash chain of audit records to verify continuity and detect unauthorized tampering or omissions.",
+)
+def verify_audit_chain(
+    db: Session = Depends(get_db),
+    current_user: UserProfileSchema = Depends(require_permission(Permission.VIEW_AUDIT_LOGS)),
+):
+    return audit_service.verify_chain(db)
+
+
+@router.get(
     "/{event_id}",
     response_model=AuditLogResponse,
     summary="Get Audit Event Details",

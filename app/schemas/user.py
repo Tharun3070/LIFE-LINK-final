@@ -20,6 +20,8 @@ class UserUpdate(BaseModel):
     hospitalName: Optional[str] = None
     organization: Optional[str] = None
     avatar: Optional[str] = None
+    phone: Optional[str] = None
+
 
 
 class UserResponse(UserProfileSchema):

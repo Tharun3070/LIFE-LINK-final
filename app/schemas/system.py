@@ -9,7 +9,12 @@ class SystemStatusResponse(BaseModel):
     geospatial: str = "operational"
     realtime: str = "operational"
     database: str = "operational"
+    notifications: str = "mock_isolated"
+    deterministic_fallback: str = "operational"
     overallHealthy: bool = True
+    rag_details: Optional[Dict[str, Any]] = None
+    llm_details: Optional[Dict[str, Any]] = None
+
 
 
 class HealthCheckResponse(BaseModel):

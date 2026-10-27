@@ -12,12 +12,15 @@ from app.db.session import SessionLocal, engine, get_db
 from app.db.init_db import init_db
 from app.api.router import api_v1_router
 from app.schemas.system import HealthCheckResponse
-from app.realtime.manager import ws_manager
+from app.realtime.manager import ws_manager, authenticate_websocket_sync
 from fastapi import WebSocket, WebSocketDisconnect
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Pre-flight environment and security validation (SEC-06, SEC-07, SEC-08)
+    settings.validate_startup_security()
+
     # Startup Diagnostic: Log resolved database target and notification mode safely
     db_info = settings.get_sanitized_database_info()
     logger.info(
@@ -65,13 +68,23 @@ FastAPI REST and Real-Time WebSocket backend powering emergency healthcare intel
 )
 
 # ------------------------------------------------------------
-# CORS Middleware
+# CORS Middleware (SEC-07)
 # ------------------------------------------------------------
+cors_origins = (
+    [o for o in settings.CORS_ORIGINS if o != "*"]
+    if settings.APP_ENV in ("staging", "production")
+    else (settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS])
+)
+# W3C / Starlette security: Wildcard origins cannot be used when allow_credentials=True
+allow_creds = True
+if "*" in cors_origins:
+    allow_creds = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=allow_creds,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -83,8 +96,9 @@ app.add_middleware(
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
+        headers=exc.headers,
         content={
-            "code": f"HTTP_{exc.status_code}",
+            "code": "RATE_LIMIT_EXCEEDED" if exc.status_code == 429 else f"HTTP_{exc.status_code}",
             "message": exc.detail,
             "status": "error",
         },
@@ -165,8 +179,13 @@ def readiness_check(db: Session = Depends(get_db)):
 # WebSocket Direct Gateway (/ws)
 # ------------------------------------------------------------
 @app.websocket("/ws")
-async def root_websocket(websocket: WebSocket):
-    await ws_manager.connect(websocket)
+async def root_websocket(websocket: WebSocket, db: Session = Depends(get_db)):
+    user_info = authenticate_websocket_sync(websocket, db=db)
+    if not user_info:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await ws_manager.connect(websocket, user_info=user_info)
     try:
         while True:
             await websocket.receive_text()

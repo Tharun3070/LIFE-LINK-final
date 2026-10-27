@@ -7,6 +7,9 @@ from app.models.ambulance import Ambulance
 from app.models.audit import AuditLog
 from app.models.consent import Consent
 from app.models.interaction import DonorEmergencyInteraction
+from app.models.blood_bank import BloodBank
+from app.models.blood_inventory import BloodInventory
+from app.models.rate_limit import RateLimitRecord
 
 __all__ = [
     "User",
@@ -19,4 +22,8 @@ __all__ = [
     "AuditLog",
     "Consent",
     "DonorEmergencyInteraction",
+    "BloodBank",
+    "BloodInventory",
+    "RateLimitRecord",
 ]
+

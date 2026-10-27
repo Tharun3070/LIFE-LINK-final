@@ -111,8 +111,8 @@ def test_alembic_all_migrations_sqlite_upgrade_downgrade(tmp_path):
     assert "last_telemetry_at" in amb_cols
     assert "device_id" in amb_cols
 
-    # 2. Downgrade 1 revision (0005 -> 0004)
-    command.downgrade(cfg, "-1")
+    # 2. Downgrade revisions down to 0004 to verify 0005 reversion
+    command.downgrade(cfg, "0004_patient_emergency_linkage")
     engine.dispose()
 
     engine2 = create_engine(db_url)

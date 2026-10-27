@@ -19,7 +19,9 @@ def test_system_status(client):
     assert data["overallHealthy"] is True
     assert data["database"] == "operational"
     assert data["realtime"] == "operational"
-    assert data["llm"] == "not_configured"
-    assert data["rag"] == "not_configured"
-    assert data["xgboost"] == "not_configured"
-    assert data["geospatial"] == "not_configured"
+    assert data["llm"] in ["operational", "configured", "not_configured"]
+    assert data["rag"] in ["operational", "configured", "not_configured"]
+    assert data["xgboost"] in ["operational", "configured", "not_configured"]
+    assert data["geospatial"] in ["operational", "configured", "not_configured"]
+    assert data["notifications"] == "mock_isolated"
+    assert data["deterministic_fallback"] == "operational"

@@ -10,6 +10,17 @@ class LLMServiceInterface(ABC):
         """Extracts structured emergency attributes (blood group, units, urgency)."""
         raise NotImplementedError("LLM inference is scheduled for Phase 5.")
 
+    @abstractmethod
+    async def generate_grounded_answer(
+        self,
+        sanitized_context: Dict[str, Any],
+        query: Optional[str] = None,
+        retrieved_documents: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Generates grounded explanation from privacy-sanitized database context and trusted clinical guidance."""
+        raise NotImplementedError("Grounded explanation generation not implemented.")
+
+
 
 class RAGServiceInterface(ABC):
     """Abstract interface for Authorized Retrieval Augmented Generation."""

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -14,10 +14,27 @@ router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
     "",
     response_model=List[HospitalResponse],
     summary="List Partner Hospitals",
-    description="Returns the hospital directory in the LifeLink network.",
+    description="Returns the hospital directory in the LifeLink network with optional filtering.",
 )
-def list_hospitals(db: Session = Depends(get_db)):
-    return hospital_service.get_all(db)
+def list_hospitals(
+    city: Optional[str] = None,
+    district: Optional[str] = None,
+    category: Optional[str] = None,
+    type: Optional[str] = None,
+    blood_bank_available: Optional[bool] = None,
+    organ_transplant_center: Optional[bool] = None,
+    db: Session = Depends(get_db),
+):
+    return hospital_service.get_all(
+        db=db,
+        city=city,
+        district=district,
+        category=category,
+        type=type,
+        blood_bank_available=blood_bank_available,
+        organ_transplant_center=organ_transplant_center,
+    )
+
 
 
 @router.get(

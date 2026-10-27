@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -23,10 +23,25 @@ router = APIRouter(prefix="/donors", tags=["Donors"])
     description="Returns registered donors in the LifeLink network with role-aware privacy protection.",
 )
 def list_donors(
+    blood_group: Optional[str] = None,
+    status: Optional[str] = None,
+    eligibility: Optional[str] = None,
+    max_distance_km: Optional[float] = None,
+    skip: int = 0,
+    limit: int = 50,
     db: Session = Depends(get_db),
     current_user: UserProfileSchema = Depends(get_current_user),
 ):
-    return donor_service.get_all(db, current_user=current_user)
+    return donor_service.get_all(
+        db=db,
+        blood_group=blood_group,
+        status=status,
+        eligibility=eligibility,
+        max_distance_km=max_distance_km,
+        skip=skip,
+        limit=limit,
+        current_user=current_user,
+    )
 
 
 @router.get(
@@ -79,7 +94,7 @@ def set_availability(
     current_user: UserProfileSchema = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return {"status": data.status, "message": f"Availability updated to {data.status}"}
+    return donor_service.set_donor_availability(db, data, current_user)
 
 
 @router.get(

@@ -141,6 +141,20 @@ class AmbulanceService:
                 detail="Unauthorized: Donors and patients cannot update ambulance location",
             )
 
+        if current_user.role in [UserRole.AMBULANCE_OPERATOR.value, UserRole.AMBULANCE_DRIVER.value]:
+            if current_user.verificationStatus == "rejected":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account has been rejected by administration.",
+                )
+            if current_user.verificationStatus == "pending" or not current_user.isVerified:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account pending verification. Please await administrator approval.",
+                )
+
+
+
         # Coordinate bounds validation
         if not (-90.0 <= data.lat <= 90.0) or not (-180.0 <= data.lng <= 180.0):
             raise HTTPException(
@@ -225,6 +239,19 @@ class AmbulanceService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Unauthorized: Telemetry ingestion is restricted to verified operators and devices",
             )
+
+        if current_user.role in [UserRole.AMBULANCE_OPERATOR.value, UserRole.AMBULANCE_DRIVER.value]:
+            if current_user.verificationStatus == "rejected":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account has been rejected by administration.",
+                )
+            if current_user.verificationStatus == "pending" or not current_user.isVerified:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account pending verification. Please await administrator approval.",
+                )
+
 
         # 2. Ambulance existence check
         a = db.query(Ambulance).filter(Ambulance.id == data.ambulanceId).first()
@@ -398,6 +425,19 @@ class AmbulanceService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Unauthorized: Donors and patients cannot update ambulance status",
             )
+
+        if current_user.role in [UserRole.AMBULANCE_OPERATOR.value, UserRole.AMBULANCE_DRIVER.value]:
+            if current_user.verificationStatus == "rejected":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account has been rejected by administration.",
+                )
+            if current_user.verificationStatus == "pending" or not current_user.isVerified:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Professional account pending verification. Please await administrator approval.",
+                )
+
 
         normalized_status = data.status.strip().lower()
         if normalized_status not in VALID_AMBULANCE_STATUSES:

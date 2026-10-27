@@ -27,10 +27,10 @@ class MockNotificationProvider:
         self._records: List[MockNotificationRecord] = []
 
     def assert_carrier_isolation(self) -> None:
-        """Verifies no production credentials or carrier endpoints are configured."""
-        if settings.TWILIO_ACCOUNT_SID or settings.TWILIO_AUTH_TOKEN:
+        """Verifies no production credentials or carrier endpoints are configured for live dispatch in simulation."""
+        if not settings.MOCK_NOTIFICATIONS_ONLY and (settings.TWILIO_ACCOUNT_SID or settings.TWILIO_AUTH_TOKEN):
             raise LiveCarrierInvocationProhibitedError(
-                "CRITICAL CARRIER ISOLATION FAILURE: Twilio credentials detected in environment! "
+                "CRITICAL CARRIER ISOLATION FAILURE: Twilio credentials detected in environment with live notifications enabled! "
                 "Simulation must execute with mock notification providers only."
             )
 

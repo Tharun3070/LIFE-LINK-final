@@ -8,6 +8,8 @@ class BloodEmergencyRequest(BaseModel):
     priority: str = Field("critical", description="critical, high, medium, low")
     hospitalId: str
     notes: Optional[str] = None
+    locationLat: Optional[float] = Field(None, alias="location_lat", description="Patient emergency origin latitude")
+    locationLng: Optional[float] = Field(None, alias="location_lng", description="Patient emergency origin longitude")
 
 
 class EmergencyCreate(BaseModel):
@@ -23,6 +25,8 @@ class EmergencyCreate(BaseModel):
     organType: Optional[str] = None
     origin: Optional[str] = None
     destination: Optional[str] = None
+    locationLat: Optional[float] = Field(None, alias="location_lat", description="Emergency origin latitude")
+    locationLng: Optional[float] = Field(None, alias="location_lng", description="Emergency origin longitude")
 
 
 class EmergencyUpdate(BaseModel):
@@ -31,6 +35,8 @@ class EmergencyUpdate(BaseModel):
     patientId: Optional[str] = None
     eta: Optional[int] = None
     description: Optional[str] = None
+    locationLat: Optional[float] = Field(None, alias="location_lat")
+    locationLng: Optional[float] = Field(None, alias="location_lng")
 
 
 class EmergencyResponse(BaseModel):
@@ -52,6 +58,8 @@ class EmergencyResponse(BaseModel):
     organType: Optional[str] = None
     origin: Optional[str] = None
     destination: Optional[str] = None
+    locationLat: Optional[float] = None
+    locationLng: Optional[float] = None
 
 
 class EmergencyEventResponse(BaseModel):

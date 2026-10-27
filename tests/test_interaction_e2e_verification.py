@@ -369,16 +369,30 @@ def test_e2e_donation_completion_requires_prior_acceptance(client, doctor_token,
 
 def test_e2e_canonical_database_configuration():
     """
-    Verifies that Settings.DATABASE_URL resolves deterministically to the canonical backend database path
-    and avoids relative-path ambiguity across working directories.
+    Verifies that Settings.DATABASE_URL resolves deterministically to the
+    canonical database path and avoids relative-path ambiguity.
     """
     from app.core.config import settings
     import os
-    
-    db_url = settings.DATABASE_URL
-    assert db_url.startswith("sqlite:///")
-    clean_path = db_url.replace("sqlite:///", "")
-    assert os.path.isabs(clean_path)
-    assert clean_path.endswith("backend/lifelink.db") or clean_path.endswith("backend\\lifelink.db")
-    assert os.path.exists(clean_path)
 
+    db_url = settings.DATABASE_URL
+
+    assert db_url.startswith("sqlite:///")
+
+    clean_path = db_url.replace("sqlite:///", "", 1)
+
+    assert os.path.isabs(clean_path)
+    assert os.path.basename(clean_path) == "lifelink.db"
+    assert os.path.isfile(clean_path)
+
+    expected_path = os.path.normcase(
+        os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "lifelink.db",
+            )
+        )
+    )
+
+    assert os.path.normcase(os.path.abspath(clean_path)) == expected_path

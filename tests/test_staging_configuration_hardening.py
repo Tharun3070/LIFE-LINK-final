@@ -90,6 +90,7 @@ def test_staging_valid_32_character_jwt_secret_accepted():
         APP_ENV="staging",
         JWT_SECRET_KEY="12345678901234567890123456789012",  # exactly 32 chars
         DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/lifelink_staging",
+        AUTO_SEED_DATA=False,
     )
     assert s.APP_ENV == "staging"
     assert len(s.JWT_SECRET_KEY) == 32
@@ -184,6 +185,7 @@ def test_staging_valid_explicit_configuration_accepted():
         APP_ENV="staging",
         JWT_SECRET_KEY="staging_cryptographic_secret_value_12345",
         DATABASE_URL="postgresql+psycopg://staging_user:staging_pass@db.staging.internal:5432/lifelink_staging",
+        AUTO_SEED_DATA=False,
     )
     assert s.APP_ENV == "staging"
     assert s.DATABASE_URL == "postgresql+psycopg://staging_user:staging_pass@db.staging.internal:5432/lifelink_staging"
@@ -195,6 +197,7 @@ def test_staging_normalizes_standard_postgres_url():
         APP_ENV="staging",
         JWT_SECRET_KEY="staging_cryptographic_secret_value_12345",
         DATABASE_URL="postgresql://staging_user:staging_pass@localhost:5432/lifelink_staging",
+        AUTO_SEED_DATA=False,
     )
     assert s.DATABASE_URL.startswith("postgresql+psycopg://")
 
@@ -205,6 +208,7 @@ def test_production_valid_explicit_configuration_accepted():
         APP_ENV="production",
         JWT_SECRET_KEY="prod_cryptographic_secret_value_67890",
         DATABASE_URL="postgresql+psycopg://prod_user:prod_pass@db.prod.internal:5432/lifelink_production",
+        AUTO_SEED_DATA=False,
     )
     assert s.APP_ENV == "production"
     assert "lifelink_production" in s.DATABASE_URL

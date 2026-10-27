@@ -1,21 +1,21 @@
-def test_list_emergencies(client):
-    response = client.get("/api/v1/emergencies")
+def test_list_emergencies(client, doctor_token):
+    response = client.get("/api/v1/emergencies", headers={"Authorization": f"Bearer {doctor_token}"})
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 3
 
 
-def test_get_emergency_by_id(client):
-    response = client.get("/api/v1/emergencies/BL-102")
+def test_get_emergency_by_id(client, doctor_token):
+    response = client.get("/api/v1/emergencies/BL-102", headers={"Authorization": f"Bearer {doctor_token}"})
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "BL-102"
     assert data["bloodGroup"] == "O-"
 
 
-def test_get_emergency_not_found(client):
-    response = client.get("/api/v1/emergencies/NONEXISTENT-999")
+def test_get_emergency_not_found(client, doctor_token):
+    response = client.get("/api/v1/emergencies/NONEXISTENT-999", headers={"Authorization": f"Bearer {doctor_token}"})
     assert response.status_code == 404
 
 
@@ -327,7 +327,7 @@ def test_resolve_cancel_unauthorized_for_donor_patient(client, donor_token, pati
 
 def test_resolve_emergency_broadcasts_websocket_event(client, doctor_token):
     """Verifies that resolving an emergency broadcasts an emergency.updated event via WebSocket."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
 
@@ -346,7 +346,7 @@ def test_resolve_emergency_broadcasts_websocket_event(client, doctor_token):
 
 def test_cancel_emergency_broadcasts_websocket_event(client, doctor_token):
     """Verifies that cancelling an emergency broadcasts an emergency.updated event via WebSocket."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
 
@@ -365,7 +365,7 @@ def test_cancel_emergency_broadcasts_websocket_event(client, doctor_token):
 
 def test_update_emergency_broadcasts_websocket_event(client, doctor_token):
     """Verifies that updating an emergency broadcasts an emergency.updated event with latest attributes."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
 
@@ -387,17 +387,17 @@ def test_update_emergency_broadcasts_websocket_event(client, doctor_token):
 def test_websocket_reconnect_authoritative_refresh_sequence(client, doctor_token):
     """Verifies that upon reconnecting, a client receives connection.established and queries fresh authoritative state."""
     # 1. First connection
-    with client.websocket_connect("/ws") as ws1:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws1:
         w1 = ws1.receive_json()
         assert w1["type"] == "connection.established"
 
     # 2. Reconnect: gateway emits fresh connection.established
-    with client.websocket_connect("/ws") as ws2:
+    with client.websocket_connect(f"/ws?token={doctor_token}") as ws2:
         w2 = ws2.receive_json()
         assert w2["type"] == "connection.established"
 
         # Client triggers authoritative refresh
-        em_res = client.get("/api/v1/emergencies")
+        em_res = client.get("/api/v1/emergencies", headers={"Authorization": f"Bearer {doctor_token}"})
         kpi_res = client.get("/api/v1/dashboard/kpis")
 
         assert em_res.status_code == 200

@@ -28,6 +28,19 @@ def init_db(db: Session) -> None:
         app_env == "development" or settings.DATABASE_URL.startswith("sqlite")
     ):
         Base.metadata.create_all(bind=db.get_bind())
+        try:
+            import sqlalchemy as sa
+            insp = sa.inspect(db.get_bind())
+            if "audit_logs" in insp.get_table_names():
+                existing_cols = {c["name"] for c in insp.get_columns("audit_logs")}
+                with db.get_bind().connect() as conn:
+                    if "previous_hash" not in existing_cols:
+                        conn.execute(sa.text("ALTER TABLE audit_logs ADD COLUMN previous_hash VARCHAR(64)"))
+                    if "record_hash" not in existing_cols:
+                        conn.execute(sa.text("ALTER TABLE audit_logs ADD COLUMN record_hash VARCHAR(64)"))
+                    conn.commit()
+        except Exception as e:
+            logger.warning(f"Schema synchronization note in init_db: {e}")
 
     # 2. Hard Seeding Guard: Demo-account seeding is strictly prohibited in staging and production
     # under all circumstances, even if AUTO_SEED_DATA is True.
@@ -420,6 +433,8 @@ def init_db(db: Session) -> None:
                 assigned_resource_ids=json.dumps(["D-101", "D-104"]),
                 blood_group="O-",
                 units_required=3,
+                location_lat=12.9716,
+                location_lng=77.5946,
             ),
             Emergency(
                 id="BL-103",
@@ -435,6 +450,8 @@ def init_db(db: Session) -> None:
                 assigned_resource_ids=json.dumps(["D-201"]),
                 blood_group="B+",
                 units_required=2,
+                location_lat=12.9716,
+                location_lng=77.5946,
             ),
             Emergency(
                 id="ORG-201",

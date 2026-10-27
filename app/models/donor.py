@@ -29,8 +29,19 @@ class Donor(Base):
     
     lat: Mapped[float] = mapped_column(Float, nullable=True)
     lng: Mapped[float] = mapped_column(Float, nullable=True)
-    
+
+    # Dataset Attributes (Coimbatore & Regional Coverage)
+    name: Mapped[str] = mapped_column(String(150), nullable=True)
+    city: Mapped[str] = mapped_column(String(100), nullable=True, default="Coimbatore")
+    district: Mapped[str] = mapped_column(String(100), nullable=True, default="Coimbatore")
+    pincode: Mapped[str] = mapped_column(String(20), nullable=True)
+    contact_number: Mapped[str] = mapped_column(String(50), nullable=True)
+    email: Mapped[str] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=True)
+
     # Provenance & Simulation Integrity
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     data_provenance: Mapped[str] = mapped_column(String(50), default="production")  # production, synthetic_registry, test_fixture
     simulated_coordinates: Mapped[bool] = mapped_column(Boolean, default=False)
+

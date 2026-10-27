@@ -285,8 +285,8 @@ def test_alembic_migration_0005_upgrade_downgrade(tmp_path):
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", db_url)
 
-    # Run upgrade to head
-    command.upgrade(cfg, "head")
+    # Run upgrade to 0005
+    command.upgrade(cfg, "0005_ambulance_telemetry_fields")
 
     engine = create_engine(db_url)
     inspector = inspect(engine)

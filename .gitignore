@@ -55,3 +55,5 @@ htmlcov/
 scratch_sim_results.json
 simulation_results.json
 scratch/
+test-temp/
+node_modules/

@@ -24,8 +24,6 @@ from app.models.donor import Donor
 # Clinically approved ABO & RhD blood compatibility matrix for Red Blood Cells / Whole Blood transfusion.
 # Reference: AABB Technical Manual (20th Edition), WHO Blood Cold Chain Guidelines.
 # Scope: Cellular component / Whole Blood matching (Recipient Group -> Set of Compatible Donor Groups).
-# Note: Plasma transfusion compatibility follows an inverted pattern (AB is universal donor, O is universal recipient)
-# and is handled under separate plasma-specific clinical protocols.
 RBC_COMPATIBILITY_MAP: Dict[str, Set[str]] = {
     "O-": {"O-"},
     "O+": {"O-", "O+"},
@@ -37,16 +35,74 @@ RBC_COMPATIBILITY_MAP: Dict[str, Set[str]] = {
     "AB+": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},  # Universal recipient for RBC
 }
 
+# Fresh Frozen Plasma (FFP) Compatibility Matrix.
+# Note: Plasma transfusion compatibility follows an INVERTED pattern (AB is universal donor, O is universal recipient)
+# because donor plasma antibodies must not bind recipient red blood cell antigens.
+PLASMA_COMPATIBILITY_MAP: Dict[str, Set[str]] = {
+    "O-": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
+    "O+": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
+    "A-": {"A-", "A+", "AB-", "AB+"},
+    "A+": {"A-", "A+", "AB-", "AB+"},
+    "B-": {"B-", "B+", "AB-", "AB+"},
+    "B+": {"B-", "B+", "AB-", "AB+"},
+    "AB-": {"AB-", "AB+"},
+    "AB+": {"AB-", "AB+"},
+}
 
-def get_compatible_donor_blood_groups(recipient_blood_group: str) -> Set[str]:
+# Platelet Compatibility Matrix:
+# In clinical transfusion medicine (AABB Standards / BSH Guidelines):
+# 1. ABO-identical platelets are the gold standard to ensure optimal post-transfusion increment.
+# 2. In emergency inventory dispatch, platelets suspended in plasma compatible with recipient red cells
+#    are acceptable (Group AB is universal plasma donor; Group A is acceptable emergency alternative).
+# 3. For RhD-negative recipients, RhD-negative platelets are strongly indicated to prevent anti-D
+#    alloimmunization caused by trace donor red blood cell stroma.
+PLATELET_COMPATIBILITY_MAP: Dict[str, Set[str]] = {
+    "O-": {"O-", "A-", "B-", "AB-"},                              # Rh- plasma-compatible
+    "O+": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},      # Universal plasma recipient
+    "A-": {"A-", "AB-"},                                          # Rh- plasma-compatible
+    "A+": {"A-", "A+", "AB-", "AB+"},
+    "B-": {"B-", "AB-"},                                          # Rh- plasma-compatible
+    "B+": {"B-", "B+", "AB-", "AB+"},
+    "AB-": {"AB-"},                                               # Rh- ABO-identical
+    "AB+": {"AB-", "AB+"},
+}
+
+SUPPORTED_CELLULAR_COMPONENTS = {"red_blood_cells", "whole_blood", "prbc", "rbc"}
+SUPPORTED_PLASMA_COMPONENTS = {"plasma", "fresh_frozen_plasma", "ffp"}
+SUPPORTED_PLATELET_COMPONENTS = {"platelets", "platelet", "sdp", "rdp"}
+
+
+def get_compatible_donor_blood_groups(
+    recipient_blood_group: str,
+    component: str = "red_blood_cells",
+) -> Set[str]:
     """
     Returns the set of clinically compatible donor blood groups for a given recipient.
     Case-insensitive matching; strips extraneous whitespace.
-    Scope: Packed Red Blood Cells (PRBC) and Whole Blood cellular transfusions only.
-    Returns an empty set for invalid or unrecognized blood group inputs to prevent unsafe matching.
+    Supports component-specific protocols:
+      - 'red_blood_cells' / 'whole_blood' / 'prbc' / 'rbc'
+      - 'plasma' / 'fresh_frozen_plasma' / 'ffp'
+      - 'platelets' / 'sdp' / 'rdp'
+    CRITICAL SAFETY RULES:
+    1. Returns an empty set for invalid or unrecognized blood group inputs.
+    2. Returns an empty set for unsupported blood components (never silently falls back to an unrelated map).
     """
-    normalized = recipient_blood_group.strip().upper() if recipient_blood_group else ""
-    return RBC_COMPATIBILITY_MAP.get(normalized, set())
+    normalized_group = recipient_blood_group.strip().upper() if recipient_blood_group else ""
+    if not normalized_group:
+        return set()
+
+    normalized_comp = (component or "red_blood_cells").strip().lower().replace(" ", "_")
+
+    if normalized_comp in SUPPORTED_PLASMA_COMPONENTS:
+        return PLASMA_COMPATIBILITY_MAP.get(normalized_group, set())
+    elif normalized_comp in SUPPORTED_PLATELET_COMPONENTS:
+        return PLATELET_COMPATIBILITY_MAP.get(normalized_group, set())
+    elif normalized_comp in SUPPORTED_CELLULAR_COMPONENTS:
+        return RBC_COMPATIBILITY_MAP.get(normalized_group, set())
+    else:
+        # SAFETY FAIL-CLOSED: Unsupported components must NEVER silently default to RBC
+        return set()
+
 
 
 def haversine_distance_km(
@@ -56,6 +112,7 @@ def haversine_distance_km(
     """
     Computes great-circle distance between two geographic coordinates using the Haversine formula.
     Returns None if any coordinate is None or outside valid geographic ranges (-90..90, -180..180).
+    Also returns None if coordinates represent Null Island (0.0, 0.0), indicating uninitialized GPS.
     """
     if lat1 is None or lng1 is None or lat2 is None or lng2 is None:
         return None
@@ -66,6 +123,10 @@ def haversine_distance_km(
         lat2_f = float(lat2)
         lng2_f = float(lng2)
     except (TypeError, ValueError):
+        return None
+
+    # Null Island check: (0.0, 0.0) represents uninitialized GPS in clinical records
+    if (lat1_f == 0.0 and lng1_f == 0.0) or (lat2_f == 0.0 and lng2_f == 0.0):
         return None
 
     if not (-90.0 <= lat1_f <= 90.0 and -90.0 <= lat2_f <= 90.0):
@@ -139,13 +200,14 @@ class BaselineDonorMatchingEngine(DonorRankingServiceInterface):
         recipient_blood_group: str,
         hospital_lat: Optional[float] = None,
         hospital_lng: Optional[float] = None,
+        component: str = "red_blood_cells",
     ) -> Tuple[List[CandidateEvaluation], List[CandidateEvaluation]]:
         """
         Filters and ranks candidate donors.
         Returns:
             (ranked_eligible_candidates, excluded_candidates)
         """
-        compatible_groups = get_compatible_donor_blood_groups(recipient_blood_group)
+        compatible_groups = get_compatible_donor_blood_groups(recipient_blood_group, component=component)
         eligible_candidates: List[CandidateEvaluation] = []
         excluded_candidates: List[CandidateEvaluation] = []
 
@@ -169,8 +231,8 @@ class BaselineDonorMatchingEngine(DonorRankingServiceInterface):
                     history_score=0.0,
                     total_score=0,
                     rank=999,
-                    exclusion_reason=f"Blood group {donor.blood_group} is incompatible with recipient group {recipient_blood_group}",
-                    explanation="Incompatible blood group according to RBC compatibility protocol.",
+                    exclusion_reason=f"Blood group {donor.blood_group} is incompatible with recipient group {recipient_blood_group} for {component}",
+                    explanation=f"Incompatible blood group according to {component} compatibility protocol.",
                 ))
                 continue
 
@@ -271,7 +333,7 @@ class BaselineDonorMatchingEngine(DonorRankingServiceInterface):
             # 8. Transparent Explanation String
             explanation_parts = [
                 f"Rule-based operational score: {total_score}/100 (deterministic heuristic baseline; not an ML prediction).",
-                f"Compatibility: {donor_group} -> {recipient_blood_group} (RBC matched).",
+                f"Compatibility: {donor_group} -> {recipient_blood_group} ({component} matched).",
                 coord_detail,
                 f"Status: {donor.status} ({int(avail_score)}%).",
                 hist_detail,

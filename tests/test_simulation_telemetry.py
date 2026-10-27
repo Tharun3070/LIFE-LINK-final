@@ -82,7 +82,9 @@ def test_scenario_15_telemetry_ordering_and_consistency(test_client, db_session,
 
 def test_websocket_no_unsolicited_replay_on_reconnect(test_client):
     """Verifies that in-memory ConnectionManager does not replay past broadcasts to fresh connections."""
-    with test_client.websocket_connect("/ws") as ws:
+    from app.core.security import create_access_token
+    token = create_access_token(subject="usr-doc-001", role="doctor")
+    with test_client.websocket_connect(f"/ws?token={token}") as ws:
         welcome = ws.receive_json()
         assert welcome["type"] == "connection.established"
         # Since no new event is broadcast while connected, no historical event is delivered

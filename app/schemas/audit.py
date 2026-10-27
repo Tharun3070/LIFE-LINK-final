@@ -16,6 +16,8 @@ class AuditLogResponse(BaseModel):
     ipAddress: Optional[str] = None
     sessionId: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    previousHash: Optional[str] = None
+    recordHash: Optional[str] = None
 
 
 class AuditLogCreate(BaseModel):

@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_app_env(cls, v: str) -> str:
         if isinstance(v, str):
-            return v.strip().lower()
+            clean = v.strip().lower()
+            if clean in ("prod", "production"):
+                return "production"
+            elif clean in ("stage", "staging"):
+                return "staging"
+            return clean
         return "development"
 
     # Server
@@ -60,6 +65,12 @@ class Settings(BaseSettings):
     AUTO_SEED_DATA: bool = True
     POSTGIS_ENABLED: bool = False
 
+    # Blood Donor Matching & Progressive Search Radius Configuration
+    DONOR_SEARCH_INITIAL_RADIUS_KM: float = 2.0
+    DONOR_SEARCH_MAX_RADIUS_KM: float = 20.0
+    DONOR_SEARCH_EXPANSION_TIERS: List[float] = [2.0, 5.0, 10.0, 20.0]
+    DONOR_SEARCH_MIN_CANDIDATES: int = 3
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def normalize_database_url(cls, v: str) -> str:
@@ -90,20 +101,39 @@ class Settings(BaseSettings):
         """
         env = (self.APP_ENV or "development").strip().lower()
         if env in ("staging", "production"):
-            # 1. JWT Secret Validation
+            # 1. JWT Secret Validation (SEC-06)
             known_insecure_secrets = {
                 "dev_insecure_jwt_secret_key_change_in_production_lifelink_2026",
                 "change_this_secret_in_production_lifelink_jwt_key",
+                "lifelink-super-secret-key-change-in-production-2026",
                 "your_secret_key",
                 "changeme",
                 "secret",
                 "placeholder",
+                "password",
+                "jwt_secret",
+                "admin",
+                "12345678",
+                "test_secret",
             }
             jwt_secret = self.JWT_SECRET_KEY.strip() if self.JWT_SECRET_KEY else ""
-            if not jwt_secret or jwt_secret.lower() in known_insecure_secrets:
+            if not jwt_secret:
+                raise ValueError(
+                    f"Invalid JWT_SECRET_KEY: APP_ENV='{self.APP_ENV}' requires an explicitly configured, secure JWT secret key. "
+                    "JWT_SECRET_KEY cannot be empty or missing in staging and production."
+                )
+
+            if jwt_secret.lower() in known_insecure_secrets:
                 raise ValueError(
                     f"Invalid JWT_SECRET_KEY: APP_ENV='{self.APP_ENV}' requires an explicitly configured, secure JWT secret key. "
                     "The development fallback or placeholder secret is strictly prohibited in staging and production."
+                )
+
+            insecure_indicators = ["dev", "insecure", "change_in_production", "placeholder", "example"]
+            if any(indicator in jwt_secret.lower() for indicator in insecure_indicators):
+                raise ValueError(
+                    f"Invalid JWT_SECRET_KEY: APP_ENV='{self.APP_ENV}' requires a genuine production secret. "
+                    "Development indicators or placeholder keywords are not permitted."
                 )
 
             if len(jwt_secret) < 32:
@@ -141,15 +171,62 @@ class Settings(BaseSettings):
                     "containing a valid target database name (e.g., postgresql+psycopg://<user>:<password>@<host>:<port>/<dbname>)."
                 )
 
+            # 4. CORS Origins Validation (SEC-07)
+            cors_list = self.CORS_ORIGINS if isinstance(self.CORS_ORIGINS, list) else [self.CORS_ORIGINS]
+            if not cors_list or len(cors_list) == 0:
+                raise ValueError(
+                    f"Invalid CORS_ORIGINS: APP_ENV='{self.APP_ENV}' requires explicit allowed origins. "
+                    "CORS_ORIGINS cannot be empty in staging and production."
+                )
+            if "*" in cors_list:
+                raise ValueError(
+                    f"Invalid CORS_ORIGINS: APP_ENV='{self.APP_ENV}' prohibits wildcard ('*') origins. "
+                    "Explicit frontend domains must be specified."
+                )
+
+            # 5. Production Seeding Guard (SEC-08)
+            if self.AUTO_SEED_DATA:
+                raise ValueError(
+                    f"Invalid configuration: AUTO_SEED_DATA cannot be True in APP_ENV='{self.APP_ENV}'. "
+                    "Automatic seeding of demo records is strictly prohibited in staging and production."
+                )
+
         return self
+
+    def validate_startup_security(self) -> None:
+        """Explicit pre-flight check called during application lifespan startup."""
+        self.validate_environment_security()
+        if self.APP_ENV in ("staging", "production") and self.DEMO_WRITE_GUARD_ENABLED:
+            self.assert_isolated_target_for_write_testing()
+
+    # Rate Limiting Configuration (SEC-09)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_LOGIN: str = "5/minute"
+    RATE_LIMIT_REGISTER: str = "3/minute"
+    RATE_LIMIT_REFRESH: str = "10/minute"
+    RATE_LIMIT_STORAGE_URL: str = ""  # Optional Redis URL, e.g. redis://localhost:6379/0
 
     # Testing & Demo Safety Guards
     DEMO_WRITE_GUARD_ENABLED: bool = False
     MOCK_NOTIFICATIONS_ONLY: bool = True
     NOTIFICATION_PROVIDER: str = "mock"  # "mock" or "twilio"
-
+    # Live SMS Demo Safety
+    TWILIO_DEMO_RECIPIENT: str = ""
     # External service configurations
     GOOGLE_MAPS_API_KEY: str = ""
+    GOOGLE_MAPS_TIMEOUT_SECONDS: float = 6.0
+    GOOGLE_MAPS_CACHE_TTL_SECONDS: int = 300
+    GOOGLE_MAPS_TRAFFIC_AWARE: bool = True
+    DONOR_SELECTION_MAX_CONTACTS: int = 3
+    DONOR_BATCH_SIZE: int = 5
+    DONOR_TARGET_ACCEPTED: int = 3
+    TEST_CONTACT_POOL: List[str] = [
+        "+919876543001",
+        "+919876543002",
+        "+919876543003",
+        "+919876543004",
+        "+919876543005",
+    ]
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_PHONE_NUMBER: str = ""
@@ -158,6 +235,8 @@ class Settings(BaseSettings):
     NOTIFICATION_RATE_LIMIT_PER_RECIPIENT_PER_HOUR: int = 5
     NOTIFICATION_SPEND_CEILING_USD: float = 100.0
     LLM_API_KEY: str = ""
+    LLM_PROVIDER: str = "mock"  # "mock", "gemini", or "openai"
+    LLM_MODEL_NAME: str = "gemini-1.5-flash"
     VECTOR_DATABASE_URL: str = ""
 
     def get_sanitized_database_info(self) -> dict:

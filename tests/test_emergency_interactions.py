@@ -432,6 +432,7 @@ def test_donor_service_contact_and_response_synchronization(client, doctor_token
     # Donor records response
     res_resp = client.post(
         "/api/v1/blood/donors/D-101/response",
+        headers={"Authorization": f"Bearer {donor_token}"},
         json={"status": "accepted", "shareLocation": True},
     )
     assert res_resp.status_code == 200

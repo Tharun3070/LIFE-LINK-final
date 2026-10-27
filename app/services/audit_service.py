@@ -1,9 +1,9 @@
 import json
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from app.models.audit import AuditLog
+from app.models.audit import AuditLog, compute_audit_hash, GENESIS_HASH
 from app.schemas.audit import AuditLogResponse, AuditLogCreate
 
 
@@ -31,6 +31,8 @@ class AuditService:
             ipAddress=log.ip_address,
             sessionId=log.session_id,
             metadata=meta,
+            previousHash=log.previous_hash,
+            recordHash=log.record_hash,
         )
 
     @staticmethod
@@ -84,6 +86,72 @@ class AuditService:
         db.commit()
         db.refresh(log)
         return AuditService._map_log_to_response(log)
+
+    @staticmethod
+    def verify_chain(db: Session) -> Dict[str, Any]:
+        """
+        Cryptographic verification of audit trail integrity (SEC-10).
+        Verifies:
+        1. Canonical hash correctness for every chained record.
+        2. Sequence continuity (each record's previous_hash matches the prior record_hash).
+        3. Backward compatibility with pre-chaining historical logs.
+        Note: Detects application-level tampering, deletion, or injection;
+        does not prevent direct storage alteration by a privileged database administrator.
+        """
+        logs = db.query(AuditLog).order_by(AuditLog.timestamp.asc(), AuditLog.id.asc()).all()
+        expected_prev = None
+        verified_count = 0
+
+        for log in logs:
+            if not log.record_hash:
+                # Pre-chaining legacy log: preserved without breaking chain
+                continue
+
+            if expected_prev is None:
+                expected_prev = log.previous_hash or GENESIS_HASH
+
+            # 1. Continuity check
+            if (log.previous_hash or GENESIS_HASH) != expected_prev:
+                return {
+                    "isValid": False,
+                    "tamperedId": log.id,
+                    "error": f"Chain discontinuity at record {log.id}: expected previous_hash {expected_prev}, found {log.previous_hash}",
+                    "verifiedCount": verified_count,
+                }
+
+            # 2. Cryptographic payload digest check
+            expected_hash = compute_audit_hash(
+                previous_hash=log.previous_hash,
+                id=log.id,
+                timestamp=log.timestamp,
+                actor=log.actor,
+                actor_type=log.actor_type,
+                action=log.action,
+                resource=log.resource,
+                resource_id=log.resource_id,
+                status=log.status,
+                module=log.module,
+                ip_address=log.ip_address,
+                session_id=log.session_id,
+                metadata_json=log.metadata_json,
+            )
+            if log.record_hash != expected_hash:
+                return {
+                    "isValid": False,
+                    "tamperedId": log.id,
+                    "error": f"Cryptographic integrity violation at record {log.id}: stored hash {log.record_hash} does not match computed digest {expected_hash}",
+                    "verifiedCount": verified_count,
+                }
+
+            expected_prev = log.record_hash
+            verified_count += 1
+
+        return {
+            "isValid": True,
+            "verifiedCount": verified_count,
+            "lastHash": expected_prev,
+            "details": f"Successfully verified integrity of {verified_count} cryptographically chained audit records.",
+        }
 
 
 audit_service = AuditService()

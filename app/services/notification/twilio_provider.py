@@ -228,7 +228,29 @@ class TwilioNotificationProvider(NotificationProviderBase):
             gate_result.channel = NotificationChannel.SMS
             gate_result.recipient_masked = mask_phone_number(to)
             return gate_result
+                        # Demo safety: allow live SMS only to the configured demo recipient.
+        allowed_recipient = (settings.TWILIO_DEMO_RECIPIENT or "").strip()
 
+        if not allowed_recipient:
+            return NotificationDispatchResult(
+                success=False,
+                status="blocked",
+                channel=NotificationChannel.SMS,
+                recipient_masked=mask_phone_number(to),
+                provider="twilio",
+                error="Live SMS blocked: demo recipient is not configured.",
+            )
+        
+        if to.strip() != allowed_recipient:
+            return NotificationDispatchResult(
+                success=False,
+                status="blocked",
+                channel=NotificationChannel.SMS,
+                recipient_masked=mask_phone_number(to),
+                provider="twilio",
+                error="Live SMS blocked: recipient is not allowlisted for the demo.",
+            )
+        
         from_num = self.from_phone
         if not from_num:
             return NotificationDispatchResult(

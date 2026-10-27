@@ -624,9 +624,11 @@ def run_scenario_12_concurrent_multiple_emergencies(
 def run_scenario_13_websocket_event_delivery(client, db: Session, user: UserProfileSchema) -> Dict[str, Any]:
     """Scenario 13: WebSocket clients receiving expected event types and emergency identifiers."""
     start_time = time.time()
+    from app.core.security import create_access_token
+    user_token = create_access_token(subject=user.id, role=user.role)
     events_received = []
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={user_token}") as ws:
         msg1 = ws.receive_json()
         assert msg1["type"] == "connection.established"
         events_received.append(msg1["type"])
@@ -665,15 +667,20 @@ def run_scenario_13_websocket_event_delivery(client, db: Session, user: UserProf
     }
 
 
-def run_scenario_14_websocket_reconnect(client) -> Dict[str, Any]:
+def run_scenario_14_websocket_reconnect(client, token: Optional[str] = None) -> Dict[str, Any]:
     """Scenario 14: Disconnected clients reconnecting or resubscribing according to the implemented protocol."""
     start_time = time.time()
     from app.realtime.manager import ws_manager
+    from app.core.security import create_access_token
+
+    if not token:
+        token = create_access_token(subject="usr-doc-001", role="doctor")
+    ws_url = f"/ws?token={token}"
 
     initial_active = len(ws_manager.active_connections)
 
     # First connection
-    with client.websocket_connect("/ws") as ws1:
+    with client.websocket_connect(ws_url) as ws1:
         msg1 = ws1.receive_json()
         assert msg1["type"] == "connection.established"
         assert len(ws_manager.active_connections) == initial_active + 1
@@ -682,7 +689,7 @@ def run_scenario_14_websocket_reconnect(client) -> Dict[str, Any]:
     assert len(ws_manager.active_connections) == initial_active
 
     # Reconnect
-    with client.websocket_connect("/ws") as ws2:
+    with client.websocket_connect(ws_url) as ws2:
         msg2 = ws2.receive_json()
         assert msg2["type"] == "connection.established"
         assert len(ws_manager.active_connections) == initial_active + 1
@@ -703,9 +710,11 @@ def run_scenario_15_telemetry_ordering_and_consistency(
 ) -> Dict[str, Any]:
     """Scenario 15: Event ordering, duplicate delivery behavior, and stale dashboard state detection."""
     start_time = time.time()
+    from app.core.security import create_access_token
+    user_token = create_access_token(subject=user.id, role=user.role)
     ordered_events = []
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(f"/ws?token={user_token}") as ws:
         # 1. Connection established
         e1 = ws.receive_json()
         ordered_events.append(e1["type"])

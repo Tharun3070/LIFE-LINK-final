@@ -19,6 +19,7 @@ from app.services.ml_audit_service import (
     MINIMUM_DISTINCT_EMERGENCIES_THRESHOLD,
 )
 from app.services.matching_engine import baseline_matching_engine, RBC_COMPATIBILITY_MAP
+from app.services.ml_training_pipeline import XGBoostRankingPipeline
 from app.models.emergency import Emergency
 from app.models.donor import Donor
 from app.core.logging import logger
@@ -27,9 +28,11 @@ from app.core.logging import logger
 class MLDonorRankingService(DonorRankingServiceInterface):
     """Safe, gated ML donor ranking service with deterministic clinical baseline fallback."""
 
-    def __init__(self):
-        self.model_version = "v0.1.0-alpha-fallback"
-        self._is_model_trained = False
+    def __init__(self, model_path: Optional[str] = None):
+        self.model_version = "v1.0.0-gated"
+        self._model_path = model_path
+        self._loaded_model = XGBoostRankingPipeline.load_model(model_path)
+        self._is_model_trained = self._loaded_model is not None
 
     def assess_training_readiness(self, db: Session) -> Dict[str, Any]:
         """Evaluates whether the production outcome ledger meets the project's data-readiness threshold."""
@@ -114,10 +117,34 @@ class MLDonorRankingService(DonorRankingServiceInterface):
             if getattr(donor, "is_synthetic", False):
                 continue
 
-            # Deterministic scoring
             features = self.extract_features(donor, emergency)
-            # Distance penalty + donation recency bonus
-            score = max(0.0, 100.0 - (features["distance_km"] * 2.5) + min(20.0, features["days_since_last_donation"] / 10.0))
+            use_ml = bool(readiness["is_ready_for_training"] and self._loaded_model)
+
+            if use_ml:
+                try:
+                    prob = XGBoostRankingPipeline.predict_response_probability(self._loaded_model, features)
+                    score = round(prob * 100.0, 2)
+                    ranking_method = "xgboost_supervised_model"
+                    ml_active = True
+                    explainability = {
+                        "clinical_compatibility": f"{donor.blood_group} is compatible with recipient {emergency.blood_group}",
+                        "ml_predicted_response_probability": f"{prob:.1%}",
+                        "model_version": self.model_version,
+                    }
+                except Exception as e:
+                    logger.warning(f"XGBoost inference failed for donor {donor.id}: {e}. Falling back to heuristic.")
+                    use_ml = False
+
+            if not use_ml:
+                # Deterministic scoring: Distance penalty + donation recency bonus
+                score = max(0.0, 100.0 - (features["distance_km"] * 2.5) + min(20.0, features["days_since_last_donation"] / 10.0))
+                ranking_method = "deterministic_clinical_fallback"
+                ml_active = False
+                explainability = {
+                    "clinical_compatibility": f"{donor.blood_group} is compatible with recipient {emergency.blood_group}",
+                    "distance_contribution": f"-{features['distance_km'] * 2.5:.1f} pts",
+                    "history_contribution": f"+{min(20.0, features['days_since_last_donation'] / 10.0):.1f} pts",
+                }
 
             ranked_results.append({
                 "donor_id": donor.id,
@@ -125,14 +152,10 @@ class MLDonorRankingService(DonorRankingServiceInterface):
                 "distance_km": features["distance_km"],
                 "eta_minutes": features["eta_minutes"],
                 "score": round(score, 2),
-                "ranking_method": "deterministic_clinical_fallback",
-                "ml_active": False,
+                "ranking_method": ranking_method,
+                "ml_active": ml_active,
                 "data_gate_status": readiness["training_status"],
-                "explainability": {
-                    "clinical_compatibility": f"{donor.blood_group} is compatible with recipient {emergency.blood_group}",
-                    "distance_contribution": f"-{features['distance_km'] * 2.5:.1f} pts",
-                    "history_contribution": f"+{min(20.0, features['days_since_last_donation'] / 10.0):.1f} pts",
-                },
+                "explainability": explainability,
             })
 
         # Sort descending by score

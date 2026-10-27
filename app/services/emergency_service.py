@@ -45,14 +45,45 @@ class EmergencyService:
             organType=e.organ_type,
             origin=e.origin,
             destination=e.destination,
+            locationLat=getattr(e, "location_lat", None),
+            locationLng=getattr(e, "location_lng", None),
         )
 
     @staticmethod
-    def get_all(db: Session, current_user: Optional[UserProfileSchema] = None) -> List[EmergencyResponse]:
-        if current_user and current_user.role == UserRole.PATIENT.value:
-            emergencies = db.query(Emergency).filter(Emergency.patient_id == current_user.id).order_by(Emergency.created_at.desc()).all()
-        else:
-            emergencies = db.query(Emergency).order_by(Emergency.created_at.desc()).all()
+    def get_all(
+        db: Session,
+        current_user: Optional[UserProfileSchema] = None,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        blood_group: Optional[str] = None,
+        emergency_type: Optional[str] = None,
+        hospital_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[EmergencyResponse]:
+        query = db.query(Emergency)
+        if current_user:
+            if current_user.role == UserRole.PATIENT.value:
+                query = query.filter(Emergency.patient_id == current_user.id)
+            elif current_user.role == UserRole.DONOR.value:
+                # Donors are not authorized to browse emergency lists
+                return []
+            elif current_user.role == UserRole.HOSPITAL_STAFF.value and current_user.hospitalId:
+                # Hospital staff restricted to emergencies of their assigned hospital
+                query = query.filter(Emergency.hospital_id == current_user.hospitalId)
+
+        if status:
+            query = query.filter(Emergency.status == status.strip().lower())
+        if priority:
+            query = query.filter(Emergency.priority == priority.strip().lower())
+        if blood_group:
+            query = query.filter(Emergency.blood_group == blood_group.strip().upper())
+        if emergency_type:
+            query = query.filter(Emergency.type == emergency_type.strip().lower())
+        if hospital_id:
+            query = query.filter(Emergency.hospital_id == hospital_id.strip())
+
+        emergencies = query.order_by(Emergency.created_at.desc()).offset(max(0, skip)).limit(min(max(1, limit), 100)).all()
         return [EmergencyService._map_emergency_to_response(e) for e in emergencies]
 
     @staticmethod
@@ -63,12 +94,24 @@ class EmergencyService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Emergency with ID '{emergency_id}' not found",
             )
-        if current_user and current_user.role == UserRole.PATIENT.value:
-            if e.patient_id != current_user.id:
+        if current_user:
+            if current_user.role == UserRole.PATIENT.value:
+                if e.patient_id != current_user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access forbidden: You are not authorized to view this emergency record",
+                    )
+            elif current_user.role == UserRole.DONOR.value:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access forbidden: You are not authorized to view this emergency record",
+                    detail="Access forbidden: Donors cannot directly view emergency records",
                 )
+            elif current_user.role == UserRole.HOSPITAL_STAFF.value and current_user.hospitalId:
+                if e.hospital_id and e.hospital_id != current_user.hospitalId:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access forbidden: Hospital staff can only view emergencies for their assigned hospital",
+                    )
         return EmergencyService._map_emergency_to_response(e)
 
     @staticmethod
@@ -166,6 +209,8 @@ class EmergencyService:
             organ_type=data.organType,
             origin=data.origin,
             destination=data.destination,
+            location_lat=data.locationLat,
+            location_lng=data.locationLng,
         )
         db.add(emergency)
 
@@ -235,6 +280,21 @@ class EmergencyService:
         if not e:
             raise HTTPException(status_code=404, detail="Emergency not found")
 
+        # Authorization: Donors and patients cannot modify emergencies
+        if current_user.role in [UserRole.DONOR.value, UserRole.PATIENT.value]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized: Donors and patients cannot modify emergencies",
+            )
+
+        # Hospital staff can only modify emergencies for their assigned hospital
+        if current_user.role == UserRole.HOSPITAL_STAFF.value and current_user.hospitalId:
+            if e.hospital_id and e.hospital_id != current_user.hospitalId:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Unauthorized: Hospital staff can only modify emergencies for their assigned hospital",
+                )
+
         if data.priority is not None:
             e.priority = data.priority
         if data.status is not None:
@@ -243,6 +303,10 @@ class EmergencyService:
             e.eta = data.eta
         if data.description is not None:
             e.description = data.description
+        if data.locationLat is not None:
+            e.location_lat = data.locationLat
+        if data.locationLng is not None:
+            e.location_lng = data.locationLng
 
         e.updated_at = datetime.now(timezone.utc).isoformat()
         db.commit()

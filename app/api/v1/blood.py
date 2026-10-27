@@ -7,6 +7,8 @@ from app.schemas.donor import (
     RankedDonorsResponse,
     DonorContactRequest,
     DonorResponseRequest,
+    DonorBatchDispatchResponse,
+    DonorWorkflowStatusResponse,
 )
 from app.schemas.auth import UserProfileSchema
 from app.services.emergency_service import emergency_service
@@ -43,6 +45,8 @@ def create_blood_emergency(
         description=f"Blood emergency — {req.bloodGroup}, {req.unitsRequired} units ({req.notes or 'Urgent transfusion'})",
         bloodGroup=req.bloodGroup,
         unitsRequired=req.unitsRequired,
+        locationLat=req.locationLat,
+        locationLng=req.locationLng,
     )
     return emergency_service.create(db, create_dto, current_user)
 
@@ -62,14 +66,23 @@ def list_blood_requests(db: Session = Depends(get_db)):
     "/donors/ranked",
     response_model=RankedDonorsResponse,
     summary="Get AI-Ranked Donors",
-    description="Returns candidate donors ranked by reachability, reliability, and ETA.",
+    description="Returns candidate donors ranked by reachability, reliability, and ETA with progressive radius expansion.",
 )
 def get_ranked_donors(
     emergencyId: str = Query(..., description="ID of the active blood emergency"),
+    minCandidates: Optional[int] = Query(None, alias="min_candidates", description="Target minimum candidate count before radius expansion"),
+    demoMode: bool = Query(False, alias="demo_mode", description="Include synthetic demo records for demonstration"),
     db: Session = Depends(get_db),
     current_user: Optional[UserProfileSchema] = Depends(get_optional_current_user),
 ):
-    return donor_service.get_ranked_donors(db, emergency_id=emergencyId, current_user=current_user)
+    return donor_service.get_ranked_donors(
+        db,
+        emergency_id=emergencyId,
+        min_candidates=minCandidates,
+        current_user=current_user,
+        demo_mode=demoMode,
+    )
+
 
 
 @router.post(
@@ -96,9 +109,48 @@ def contact_donor(
 def record_response(
     donor_id: str,
     body: DonorResponseRequest,
-    current_user: Optional[UserProfileSchema] = Depends(get_optional_current_user),
+    current_user: UserProfileSchema = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return donor_service.record_donor_response(
         db, donor_id, body.status, share_location=body.shareLocation or False, current_user=current_user
     )
+
+
+@router.post(
+    "/emergencies/{emergency_id}/dispatch-batch",
+    response_model=DonorBatchDispatchResponse,
+    summary="Dispatch Next Batch of Donors",
+    description="Selects five nearest eligible uncontacted donors (when available) and sends mock alerts with progressive radius expansion.",
+)
+def dispatch_batch(
+    emergency_id: str,
+    batch_size: int = Query(5, description="Number of donors to select per batch (default: 5)"),
+    current_user: UserProfileSchema = Depends(require_role([
+        UserRole.DOCTOR, UserRole.HOSPITAL_STAFF, UserRole.ADMIN
+    ])),
+    db: Session = Depends(get_db),
+):
+    return donor_service.dispatch_emergency_donor_batch(
+        db=db,
+        emergency_id=emergency_id,
+        batch_size=batch_size,
+        current_user=current_user,
+    )
+
+
+@router.get(
+    "/emergencies/{emergency_id}/workflow-status",
+    response_model=DonorWorkflowStatusResponse,
+    summary="Get Emergency Donor Outreach Workflow Status",
+    description="Retrieves the current outreach progress, contact count, and accepted donor status.",
+)
+def get_workflow_status(
+    emergency_id: str,
+    db: Session = Depends(get_db),
+):
+    return donor_service.get_emergency_workflow_status(
+        db=db,
+        emergency_id=emergency_id,
+    )
+

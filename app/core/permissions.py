@@ -7,6 +7,7 @@ class UserRole(str, Enum):
     HOSPITAL_STAFF = "hospital_staff"
     TRANSPLANT_COORDINATOR = "transplant_coordinator"
     AMBULANCE_OPERATOR = "ambulance_operator"
+    AMBULANCE_DRIVER = "ambulance_driver"
     DONOR = "donor"
     PATIENT = "patient"
     ADMIN = "admin"
@@ -87,6 +88,12 @@ ROLE_PERMISSIONS: Dict[UserRole, List[Permission]] = {
         Permission.HOSPITAL_READ,
     ],
     UserRole.AMBULANCE_OPERATOR: [
+        Permission.MANAGE_AMBULANCE,
+        Permission.AMBULANCE_UPDATE_LOCATION,
+        Permission.AMBULANCE_UPDATE_STATUS,
+        Permission.VIEW_LIVE_MAP,
+    ],
+    UserRole.AMBULANCE_DRIVER: [
         Permission.MANAGE_AMBULANCE,
         Permission.AMBULANCE_UPDATE_LOCATION,
         Permission.AMBULANCE_UPDATE_STATUS,
